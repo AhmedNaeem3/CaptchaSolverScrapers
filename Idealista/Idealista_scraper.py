@@ -17,14 +17,14 @@ load_dotenv()
 
 class IdealistaScraper:
     HEADERS = {
-        "connection": "keep-alive"
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
     }
     SCRAPE_DATE_TIME = datetime.now(tz=pytz.utc).strftime("%d%m%Y_%H%M")
 
     def __init__(self):
         self.scrapfly = ScrapflyClient(key=self.get_api_key())
-        self.base_url = "{base_url}"
-        self.search_url = "{search_url}"
+        self.base_url = "https://www.idealista.pt"
+        self.search_url = "{base_url}/comprar-terrenos/#municipality-search"
         self.scraped_data = []
         self.sleep = 1
 
@@ -52,7 +52,7 @@ class IdealistaScraper:
             )
             response = await self.scrapfly.async_scrape(scrape_config)
             soup = BeautifulSoup(response.content, "html.parser")
-            regions = soup.select(".locations-list a")
+            regions = soup.select(".locations-list .locations-list__links a")
 
             for region in regions:
                 region_url = region.get('href')
@@ -82,7 +82,7 @@ class IdealistaScraper:
             response = await self.scrapfly.async_scrape(scrape_config)
             soup = BeautifulSoup(response.content, "html.parser")
 
-            view_all_products = soup.select_one(".container .title a")
+            view_all_products = soup.select_one(".container #localities .title a")
             if view_all_products:
                 listing_page_url = view_all_products.get('href')
                 listing_url = f"{self.base_url}{listing_page_url}"
@@ -98,7 +98,7 @@ class IdealistaScraper:
                 response = await self.scrapfly.async_scrape(scrape_config)
                 soup = BeautifulSoup(response.content, "html.parser")
 
-            property_listings = soup.select('.item-multimedia')
+            property_listings = soup.select('.item-multimedia-container')
             await self.scrape_listing_urls(property_listings)
 
             next_page = soup.select_one(".pagination .next a")
@@ -116,7 +116,7 @@ class IdealistaScraper:
         for property in property_listings:
             try:
                 land_type = None
-                property_details = property.select(".item-detail-char")
+                property_details = property.select(".item-detail-char .item-detail")
                 if len(property_details) > 1:
                     land_type = property_details[1].text
 
@@ -161,13 +161,13 @@ class IdealistaScraper:
 
     async def parse_products(self, soup, url, type_of_land):
 
-        particular_property = soup.select_one(".professional-name")
+        particular_property = soup.select_one(".professional-name .name")
         if particular_property:
             if "Particular" != particular_property.text.strip():
                 logger.info(f"Skipping not a particular property: {url}")
                 return
 
-        property_features = soup.select(".details-property-feature-one li")
+        property_features = soup.select(".details-property-feature-one .details-property_features li")
         buildable_area = [
             feature.text.split("edificável")[1].strip()
             for feature in property_features
@@ -188,16 +188,16 @@ class IdealistaScraper:
         land_type = type_of_land
         property_details = soup.select_one(".detail-info")
         property_name = property_details.select_one(".main-info__title-main").text.strip()
-        total_land_area = property_details.select_one(".info-features").text.strip()
+        total_land_area = property_details.select_one(".info-features span").text.strip()
         total_land_area = total_land_area.split("m²")[0].strip().replace(".", ",")
 
-        property_price = soup.select_one("#mortgages .toggle-price")
-        price = property_price.select_one(".flex-feature").text.strip()
+        property_price = soup.select_one("#mortgages .toggle-price .price-features__container")
+        price = property_price.select_one(".flex-feature strong.flex-feature-details").text.strip()
         price = price.split("€")[0].strip().replace(".", ",")
-        price_per = property_price.select(".squaredmeterprice")[1].text.strip()
+        price_per = property_price.select(".squaredmeterprice .flex-feature-details")[1].text.strip()
         price_per = price_per.split("€/m²")[0]
 
-        location_elements = soup.select("#mapWrapper")
+        location_elements = soup.select("#mapWrapper .header-map-list")
         location = ", ".join([element.text.strip() for element in location_elements])
 
         contact_number1 = None
@@ -212,7 +212,7 @@ class IdealistaScraper:
                     url=contact_info_url,
                     country="PT",
                     headers={
-                        "connection":"keep-alive"
+                        "accept":"application/json, text/javascript, */*; q=0.01"
                     },
                     asp=True,
                     cache=True,
